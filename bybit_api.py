@@ -126,7 +126,8 @@ class BybitTradeWS:
         await self.ws.send(json.dumps({"op": "auth", "args": self._ws_auth_args()}))
         # read auth ack
         ack = json.loads(await self.ws.recv())
-        self.authed = bool(ack.get("success"))
+        # Bybit WS trade returns retCode=0 on success (not "success": true)
+        self.authed = ack.get("success") is True or ack.get("retCode") == 0
         self.log.info(f"[WS_TRADE] auth {'OK' if self.authed else 'FAILED: '+str(ack)}")
         asyncio.create_task(self._reader())
         return self.authed
