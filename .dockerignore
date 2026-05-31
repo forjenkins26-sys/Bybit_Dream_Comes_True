@@ -1,0 +1,6 @@
+__pycache__/
+*.pyc
+backtest_1yr/
+*.csv
+*.md
+.git/
