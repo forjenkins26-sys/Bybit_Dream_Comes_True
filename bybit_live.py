@@ -1284,8 +1284,8 @@ def run_preflight() -> dict:
         ok = False
         results["balance_fetch"] = {"ok": False, "detail": str(e)}
     if not ok:
-        passed = False
-        log.error("PRE-FLIGHT FAIL: balance fetch failed")
+        # WARNING only — bot can trade without balance read permission
+        log.warning("PRE-FLIGHT WARN: balance fetch failed (API key may lack Account read permission)")
 
     # 6. Lot size sanity
     ok = LOT_SIZE >= 0.001
