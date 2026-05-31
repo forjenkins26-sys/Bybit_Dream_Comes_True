@@ -240,7 +240,8 @@ async def _do_entry(side, fill_ref, signal_recv_time, st=None,
         _ratio = round(abs(slip) / sl_dist, 3) if sl_dist > 0 else 0.0
         _grade = "TEST" if is_test else _structure_grade(_ratio)
         _slip_pct = round(abs(slip) / fill_avg * 100, 4) if fill_avg else 0.0
-        signal_latency_ms = round((signal_recv_time - entry_submit_time + 0.001) * 1000, 1)
+        # signal_recv_time = when candle close detected; entry_submit_time = when order sent
+        signal_latency_ms = round((entry_submit_time - signal_recv_time) * 1000, 1)
         entry_latency_ms  = round(lat, 1)
 
         ist = (datetime.now(timezone.utc) + timedelta(seconds=19800)).strftime("%d/%m/%Y %H:%M:%S")
@@ -290,14 +291,17 @@ async def _do_entry(side, fill_ref, signal_recv_time, st=None,
         log.info(f"[ENTRY] {side} | ref {fill_ref:.1f} fill {fill_avg:.1f} slip {slip:+.2f}pts | "
                  f"SL {sl} TP {tp} | lat {lat:.0f}ms | grade={_grade}")
     finally:
-        _entry_busy = False
+        with _state_lock:
+            _entry_busy = False
 
 
 async def _position_watch():
     global open_trade
     while True:
         await asyncio.sleep(3)
-        if not open_trade:
+        with _state_lock:
+            has_trade = open_trade is not None
+        if not has_trade:
             continue
         try:
             pos = await asyncio.get_event_loop().run_in_executor(None, B.get_position)
@@ -450,13 +454,12 @@ async def test_fire(side: str, confirm: str = ""):
         }, status_code=403)
     global _entry_busy
     with _state_lock:
-        if open_trade:
-            return JSONResponse({"error": "Already in trade — close first with /test/close"}, status_code=400)
+        if open_trade or _entry_busy:
+            return JSONResponse({"error": "Already in trade or entry busy — close first with /test/close"}, status_code=400)
+        _entry_busy = True   # set inside lock before any async work
     price = _fetch_price() or 77000.0
     trade_id = f"TEST_{side[0]}{int(time.time()*1000)}"
     bybit_side = "Buy" if side == "BUY" else "Sell"
-    with _state_lock:
-        _entry_busy = True
     asyncio.create_task(_do_entry(bybit_side, price, time.time(),
                                   trade_id=trade_id, is_test=True,
                                   chop_avg_tr=50.0, burst_threshold=100.0, candle_body=120.0))
