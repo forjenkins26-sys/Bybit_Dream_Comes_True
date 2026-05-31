@@ -1205,6 +1205,94 @@ feed   = BybitFeed(symbol=SYMBOL, interval=INTERVAL, on_candle_close=on_candle_c
 LOOP   = None
 
 
+def run_preflight() -> dict:
+    """Pre-flight validation — mirrors Anand/Mummy bot pattern."""
+    results = {}
+    passed  = True
+
+    # 1. Credentials present
+    ok = bool(B.API_KEY and B.API_SECRET)
+    results["credentials"] = {"ok": ok}
+    if not ok:
+        passed = False
+        log.error("PRE-FLIGHT FAIL: API credentials missing")
+
+    # 2. API auth — query server time (authed endpoint not needed; use position query)
+    try:
+        st = B.server_time()
+        ok = st is not None
+        results["api_auth"] = {"ok": ok, "server_time": st}
+    except Exception as e:
+        ok = False
+        results["api_auth"] = {"ok": False, "detail": str(e)}
+    if not ok:
+        passed = False
+        log.error("PRE-FLIGHT FAIL: Bybit API unreachable")
+
+    # 3. Price feed
+    try:
+        r = B.rest_get("/v5/market/tickers", {"category": "linear", "symbol": SYMBOL})
+        price = float(r["result"]["list"][0]["lastPrice"]) if r and r.get("retCode") == 0 else None
+        ok = price is not None
+        results["price_feed"] = {"ok": ok, "price": price}
+    except Exception as e:
+        ok = False
+        results["price_feed"] = {"ok": False, "detail": str(e)}
+    if not ok:
+        passed = False
+        log.error("PRE-FLIGHT FAIL: price feed unavailable")
+
+    # 4. No open position
+    try:
+        pos = B.get_position()
+        ok  = pos is None
+        results["no_open_position"] = {
+            "ok": ok,
+            "detail": f"size={pos.get('size')} avgPrice={pos.get('avgPrice')}" if pos else "flat",
+        }
+        if not ok:
+            passed = False
+            log.error("PRE-FLIGHT FAIL: stale open position — close manually before trading")
+    except Exception as e:
+        results["no_open_position"] = {"ok": False, "detail": str(e)}
+        passed = False
+
+    # 5. Balance fetch
+    try:
+        r = B.rest_get("/v5/account/wallet-balance", {"accountType": "UNIFIED"})
+        ok = r is not None and r.get("retCode") == 0
+        bal = None
+        if ok:
+            coins = r["result"]["list"][0].get("coin", [])
+            usdt = next((c for c in coins if c["coin"] == "USDT"), None)
+            bal = float(usdt["availableToWithdraw"]) if usdt else None
+        results["balance_fetch"] = {"ok": ok, "usdt_available": bal}
+    except Exception as e:
+        ok = False
+        results["balance_fetch"] = {"ok": False, "detail": str(e)}
+    if not ok:
+        passed = False
+        log.error("PRE-FLIGHT FAIL: balance fetch failed")
+
+    # 6. Lot size sanity
+    ok = LOT_SIZE >= 0.001
+    results["lot_size"] = {"ok": ok, "lot_btc": LOT_SIZE, "min_btc": 0.001}
+    if not ok:
+        passed = False
+        log.error(f"PRE-FLIGHT FAIL: LOT_SIZE={LOT_SIZE} < minimum=0.001")
+
+    results["all_passed"] = passed
+    results["mode"]       = "LIVE"
+    results["timestamp"]  = datetime.now().isoformat()
+
+    status = "✅ ALL PASSED" if passed else "❌ FAILED"
+    log.info(f"[PRE-FLIGHT] {status}")
+    summary = {k: (v.get("ok") if isinstance(v, dict) else v) for k, v in results.items()}
+    tg(f"{'✅' if passed else '❌'} Pre-flight {'PASSED' if passed else 'FAILED'}\n"
+       f"Mode: LIVE | {json.dumps(summary, indent=2)}")
+    return results
+
+
 async def main():
     global trade_ws, LOOP
     LOOP = asyncio.get_event_loop()
@@ -1212,13 +1300,24 @@ async def main():
     _start_health_server()
     if not (B.API_KEY and B.API_SECRET):
         log.error("No API keys."); return
-    log.info(f"[PREFLIGHT] testnet={B._TESTNET} symbol={SYMBOL} {CONFIG_TAG}")
-    pos = B.get_position()
-    log.info(f"[PREFLIGHT] position query OK: {'FLAT' if pos is None else pos.get('size')}")
+
+    # Pre-flight (same as Anand/Mummy bot)
+    pf = run_preflight()
+    if not pf.get("all_passed"):
+        log.error("[PREFLIGHT] FAILED — fix issues above before trading")
+        # don't exit; still start feed for monitoring but warn
+
     trade_ws = B.BybitTradeWS(logger=log)
     if not await trade_ws.connect():
         log.warning("[PREFLIGHT] WS-trade auth failed — will use REST fallback")
-    tg(f"🟢 <b>Bybit bot LIVE</b>\n{CONFIG_TAG}\nWS-trade: {'✓' if trade_ws.authed else 'REST fallback'}\nDashboard: https://bybit-volsurge-bot.fly.dev/dashboard")
+
+    tg(f"🟢 <b>LIVE Vol Surge Bybit started</b>\n"
+       f"Signal: WS-native\n"
+       f"Candles: Heikin-Ashi ✓\n"
+       f"MB{MIN_BODY:.0f} · SL{FIXED_SL:.0f}/TP{FIXED_TP:.0f} · burst{BURST_MULT} · {INTERVAL}m\n"
+       f"WS-trade: {'✓' if trade_ws.authed else 'REST fallback'}\n"
+       f"Dashboard: https://bybit-volsurge-bot.fly.dev/dashboard")
+
     asyncio.create_task(_position_watch())
     await feed.start()
 
