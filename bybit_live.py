@@ -281,12 +281,23 @@ async def _do_entry(side, fill_ref, signal_recv_time, st=None,
             "sl": sl, "tp": tp, "order_lat_ms": round(lat), "config": CONFIG_TAG,
         })
 
-        dir_label = "BUY" if side == "Buy" else "SELL"
+        dir_label  = "BUY" if side == "Buy" else "SELL"
+        fill_ist   = (datetime.now(timezone.utc) + timedelta(seconds=19800)).strftime("%d/%m %H:%M:%S IST")
+        _chop      = chop_avg_tr or (st.chop_avg_tr if st else 0)
+        _burst     = burst_threshold or (st.burst_threshold if st else 0)
+
+        # Server-side SL/TP — equivalent of bracket order
+        tg(f"🔒 <b>SERVER-SIDE SL/TP SET</b> [{dir_label}]\n"
+           f"SL: {sl:,.1f} (exchange stop-market — server-side)\n"
+           f"TP: {tp:,.1f} (exchange limit — server-side)\n"
+           f"Exits are safe during disconnects ✓")
+
         tg(f"{'🧪 TEST' if is_test else '🟢 LIVE'} <b>{dir_label} ENTERED</b> [Bybit {INTERVAL}m WS]\n"
-           f"Signal: {fill_ref:,.1f} → Fill: {fill_avg:,.1f} | Slip: <b>{slip:+.2f}pts</b>\n"
-           f"SL: {sl:,.1f} | TP: {tp:,.1f}\n"
-           f"Sig lat: {signal_latency_ms:.0f}ms | Order lat: {entry_latency_ms:.0f}ms\n"
-           f"Structure: <b>{_grade}</b> | Chop: {chop_avg_tr:.1f}\n"
+           f"Fill: <b>{fill_avg:,.1f}</b> | Slip: <b>{slip:+.2f}pts</b>\n"
+           f"SL: {sl:,.1f} [FIXED {FIXED_SL:.0f}pts] | TP: {tp:,.1f} [FIXED {FIXED_TP:.0f}pts]\n"
+           f"Fill: {fill_ist}\n"
+           f"Signal lat: {signal_latency_ms:.0f}ms | Entry lat: {entry_latency_ms:.0f}ms\n"
+           f"Structure: <b>{_grade}</b> | Chop: {_chop:.1f} Burst: {_burst:.1f}\n"
            f"⚙️ {CONFIG_TAG}")
         log.info(f"[ENTRY] {side} | ref {fill_ref:.1f} fill {fill_avg:.1f} slip {slip:+.2f}pts | "
                  f"SL {sl} TP {tp} | lat {lat:.0f}ms | grade={_grade}")
@@ -378,11 +389,13 @@ async def _position_watch():
                     "config":                CONFIG_TAG,
                 })
 
-                outcome_emoji = "✅" if outcome == "TP" else "❌"
-                tg(f"{outcome_emoji} <b>{'BUY' if side=='BUY' else 'SELL'} {outcome}</b> [Bybit]\n"
-                   f"Fill: {fill:,.1f} → Exit: {exit_px:,.1f} | Pts: {pts:+.2f}\n"
-                   f"P&L: {pnl_usdt:+.4f} USDT | Duration: {dur}s\n"
-                   f"Structure: {grade} | Slip: {slip:+.2f}pts\n"
+                outcome_emoji = "✅" if outcome == "TP" else "🔴"
+                outcome_label = "TP HIT" if outcome == "TP" else "SL HIT"
+                dur_fmt = f"{int(dur)//60}m {int(dur)%60}s" if dur >= 60 else f"{int(dur)}s"
+                tg(f"{outcome_emoji} <b>{outcome_label} [{side}]</b>\n"
+                   f"Entry: {fill:,.1f} → Exit: {exit_px:,.1f}\n"
+                   f"PnL: <b>{pts:+.2f}pts</b> | {pnl_usdt:+.4f} USDT | Outcome: {outcome}\n"
+                   f"Structure: {grade} | Duration: {dur_fmt}\n"
                    f"⚙️ {CONFIG_TAG}")
                 log.info(f"[EXIT] {outcome} | pts={pts:+.2f} pnl={pnl_usdt:+.4f} USDT | dur={dur}s")
         except Exception as e:
