@@ -1278,7 +1278,8 @@ def run_preflight() -> dict:
         if ok:
             coins = r["result"]["list"][0].get("coin", [])
             usdt = next((c for c in coins if c["coin"] == "USDT"), None)
-            bal = float(usdt["availableToWithdraw"]) if usdt else None
+            # Use walletBalance — availableToWithdraw is empty in Unified account
+            bal = float(usdt["walletBalance"]) if usdt and usdt.get("walletBalance") else None
         results["balance_fetch"] = {"ok": ok, "usdt_available": bal}
     except Exception as e:
         ok = False
