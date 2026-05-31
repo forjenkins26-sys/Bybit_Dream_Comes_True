@@ -448,10 +448,10 @@ async def test_fire(side: str, confirm: str = ""):
             "warning": f"LIVE order — add ?confirm=yes to place REAL {side} on Bybit",
             "retry_url": f"/test/fire/{side.lower()}?confirm=yes"
         }, status_code=403)
+    global _entry_busy
     with _state_lock:
         if open_trade:
             return JSONResponse({"error": "Already in trade — close first with /test/close"}, status_code=400)
-    global _entry_busy
     price = _fetch_price() or 77000.0
     trade_id = f"TEST_{side[0]}{int(time.time()*1000)}"
     bybit_side = "Buy" if side == "BUY" else "Sell"
@@ -464,6 +464,7 @@ async def test_fire(side: str, confirm: str = ""):
 
 @app.get("/test/close")
 async def test_close(confirm: str = ""):
+    global open_trade
     if confirm.lower() != "yes":
         return JSONResponse({
             "warning": "LIVE close — add ?confirm=yes to cancel SL/TP and close position on Bybit",
@@ -475,13 +476,11 @@ async def test_close(confirm: str = ""):
         ot = dict(open_trade)
 
     price = _fetch_price() or float(ot.get("fill_price", 0))
-    # send market close
     bybit_side = "Sell" if ot["direction"] == "BUY" else "Buy"
     r = B.place_market_order_rest(bybit_side, LOT_SIZE_STR)
     if not r or r.get("retCode", -1) != 0:
         return JSONResponse({"error": "Close order failed", "resp": str(r)}, status_code=500)
 
-    global open_trade
     with _state_lock:
         open_trade = None
 
