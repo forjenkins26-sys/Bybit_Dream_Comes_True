@@ -202,10 +202,14 @@ def on_candle_close(raw: Candle, buffer: deque):
             return
         _entry_busy = True
     side = "Buy" if st.signal == "BUY" else "Sell"
-    fill_ref = feed.mark_price or raw.close
+    # Anchor SL/TP to raw bar close — matches Pine parity.
+    # mark_price can be 50-150pts ahead of bar close on fast burst candles,
+    # causing SL/TP to be set at wrong levels vs Pine signal.
+    fill_ref = raw.close
     signal_recv_time = time.time()
     log.info(f"[SIGNAL] {st.signal} | raw_close={raw.close:.1f} ha_close={st.close:.1f} "
-             f"ref={fill_ref:.1f} body={st.candle_body:.1f} chop={st.chop_avg_tr:.1f}")
+             f"mark={feed.mark_price:.1f if feed.mark_price else 0} ref={fill_ref:.1f} "
+             f"body={st.candle_body:.1f} chop={st.chop_avg_tr:.1f}")
     asyncio.run_coroutine_threadsafe(
         _do_entry(side, fill_ref, signal_recv_time, st), LOOP)
 
