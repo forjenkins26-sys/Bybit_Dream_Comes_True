@@ -339,7 +339,7 @@ async def _do_entry(side, fill_ref, signal_recv_time, st=None,
            f"Exits are safe during disconnects ✓")
 
         tg(f"{'🧪 TEST' if is_test else '🟢 LIVE'} <b>{dir_label} ENTERED</b> [Bybit {INTERVAL}m WS]\n"
-           f"Fill: <b>{fill_avg:,.1f}</b> | Slip: <b>{slip:+.2f}pts</b>\n"
+           f"Signal: {fill_ref:,.1f} → Fill: <b>{fill_avg:,.1f}</b> | Slip: <b>{slip:+.2f}pts</b>\n"
            f"SL: {sl:,.1f} [FIXED {FIXED_SL:.0f}pts] | TP: {tp:,.1f} [FIXED {FIXED_TP:.0f}pts]\n"
            f"Bar close: {_bar_close_ist} | Fill: {fill_ist}\n"
            f"Signal lat: {signal_latency_ms:.0f}ms | Entry lat: {entry_latency_ms:.0f}ms\n"
