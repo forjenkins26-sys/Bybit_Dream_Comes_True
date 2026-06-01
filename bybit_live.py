@@ -60,6 +60,24 @@ _DATA_PERSISTENT = (DATA_DIR / ".persistent_marker").exists() or DATA_DIR != Pat
 TRADE_FILE     = DATA_DIR / "bybit_trades.csv"
 LIFECYCLE_FILE = DATA_DIR / "bybit_lifecycle.csv"
 SLIP_FILE      = DATA_DIR / "bybit_slippage.csv"
+PRICE_LOG_FILE = DATA_DIR / "price_log.csv"
+
+# ── Price logger ─────────────────────────────────────────────────────────
+_price_log_initialized = False
+def _log_price(mark: float, last: float):
+    global _price_log_initialized
+    try:
+        ist = (datetime.now(timezone.utc) + timedelta(seconds=19800)).strftime("%H:%M:%S.%f")[:-3]
+        unix_ms = int(time.time() * 1000)
+        new = not PRICE_LOG_FILE.exists() or not _price_log_initialized
+        with open(PRICE_LOG_FILE, "a", newline="", encoding="utf-8") as f:
+            w = csv.writer(f)
+            if new:
+                w.writerow(["timestamp_ist", "unix_ms", "mark_price", "last_price"])
+                _price_log_initialized = True
+            w.writerow([ist, unix_ms, f"{mark:.2f}" if mark else "", f"{last:.2f}" if last else ""])
+    except Exception:
+        pass
 
 TRADE_HDRS = [
     "trade_id", "direction", "entry_time_ist",
@@ -1312,6 +1330,20 @@ def run_preflight() -> dict:
     return results
 
 
+async def _price_log_task():
+    """Log mark price every 1 second to price_log.csv."""
+    last_price = None
+    while True:
+        try:
+            px = feed.mark_price if hasattr(feed, "mark_price") else None
+            if px:
+                _log_price(px, px)
+                last_price = px
+        except Exception:
+            pass
+        await asyncio.sleep(1.0)
+
+
 async def main():
     global trade_ws, LOOP
     LOOP = asyncio.get_event_loop()
@@ -1338,6 +1370,7 @@ async def main():
        f"Dashboard: https://bybit-volsurge-bot.fly.dev/dashboard")
 
     asyncio.create_task(_position_watch())
+    asyncio.create_task(_price_log_task())
     await feed.start()
 
 
