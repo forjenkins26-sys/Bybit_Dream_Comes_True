@@ -202,10 +202,11 @@ def on_candle_close(raw: Candle, buffer: deque):
             return
         _entry_busy = True
     side = "Buy" if st.signal == "BUY" else "Sell"
-    # fill_ref = actual market price for SL/TP anchoring (fixed distance from fill).
-    # Using raw.close would misplace SL/TP since fill happens at market, not bar close.
-    # Pine parity gap (HA close vs market price on burst candles) is a known display issue.
-    fill_ref = feed.mark_price or raw.close
+    # fill_ref = raw bar close (matches Pine's pine_entry_px).
+    # mark_price at signal time is ALREADY the next bar's price (ticker stream races ahead).
+    # On burst candles mark_price can be 50-150pts above raw.close before order is sent.
+    # SL/TP set from raw.close = same levels as Pine. Actual fill slippage shown transparently.
+    fill_ref = raw.close
     signal_recv_time = time.time()
     log.info(f"[SIGNAL] {st.signal} | raw_close={raw.close:.1f} ha_close={st.close:.1f} "
              f"mark={feed.mark_price or 0:.1f} ref={fill_ref:.1f} "
