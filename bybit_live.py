@@ -44,8 +44,9 @@ LOT_SIZE_STR = str(LOT_SIZE)
 INTERVAL    = os.getenv("BYBIT_INTERVAL", "1")
 MIN_BODY    = float(os.getenv("MIN_BODY_PTS", "150"))
 BURST_MULT  = float(os.getenv("VS_BURST_MULT", "2.0"))
-FIXED_SL    = float(os.getenv("FIXED_SL_PTS", "50"))
-FIXED_TP    = float(os.getenv("FIXED_TP_PTS", "100"))
+FIXED_SL             = float(os.getenv("FIXED_SL_PTS", "50"))
+FIXED_TP             = float(os.getenv("FIXED_TP_PTS", "100"))
+MAX_PRE_ENTRY_SLIP   = float(os.getenv("MAX_PRE_ENTRY_SLIP_PTS", "0"))  # 0 = disabled
 TP_R        = round(FIXED_TP / FIXED_SL, 2) if FIXED_SL > 0 else 2.0
 TG_TOKEN    = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TG_CHAT     = os.getenv("TELEGRAM_CHAT_ID", "")
@@ -226,6 +227,25 @@ def on_candle_close(raw: Candle, buffer: deque):
     # SL/TP set from raw.close = same levels as Pine. Actual fill slippage shown transparently.
     fill_ref = raw.close
     signal_recv_time = time.time()
+
+    # ── Pre-entry slippage guard (mirrors Anand bot) ──────────────────────
+    # If price already moved > MAX_PRE_ENTRY_SLIP pts since bar close, skip.
+    # Entering here = entering near SL level of signal.
+    if MAX_PRE_ENTRY_SLIP > 0 and feed.mark_price:
+        cur_px   = feed.mark_price
+        pre_slip = (cur_px - fill_ref) if side == "Buy" else (fill_ref - cur_px)
+        guard    = MAX_PRE_ENTRY_SLIP
+        if pre_slip > guard:
+            log.warning(f"[GUARD] ENTRY SKIPPED [{side}] price moved {pre_slip:+.1f}pts > {guard:.0f}pt guard | "
+                        f"signal={fill_ref:.1f} now={cur_px:.1f}")
+            tg(f"⏭ <b>ENTRY SKIPPED [{side}]</b>\n"
+               f"Price moved <b>{pre_slip:+.1f}pts</b> — exceeds guard ({guard:.0f}pts)\n"
+               f"Signal: {fill_ref:,.1f} | Now: {cur_px:,.1f}\n"
+               f"Entry would be at SL level of signal — skipping")
+            with _state_lock:
+                _entry_busy = False
+            return
+
     log.info(f"[SIGNAL] {st.signal} | raw_close={raw.close:.1f} ha_close={st.close:.1f} "
              f"mark={feed.mark_price or 0:.1f} ref={fill_ref:.1f} "
              f"body={st.candle_body:.1f} chop={st.chop_avg_tr:.1f}")

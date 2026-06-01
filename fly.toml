@@ -15,6 +15,7 @@ primary_region = 'sin'
   # ── Strategy: live pick (82.3% WR, PF 9.28 backtest) ──
   MIN_BODY_PTS = '50.0'
   VS_BURST_MULT = '2.0'
+  MAX_PRE_ENTRY_SLIP_PTS = '70.0'
   FIXED_SL_PTS = '100.0'
   FIXED_TP_PTS = '50.0'
   LOT_SIZE = '0.001'           # BTC — validation size; scale up after proven
