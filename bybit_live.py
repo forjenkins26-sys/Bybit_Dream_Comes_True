@@ -783,6 +783,7 @@ async def dashboard():
           <td style="color:#6b7280;text-align:center;">{total-i+1}</td>
           <td>{_dir(t.get('direction',''))}</td>
           <td style="color:#d1d5db;font-size:11px;">{t.get('entry_time_ist','—')}</td>
+          <td style="color:#facc15;text-align:right;">{_f(t.get('signal_ref',''))}</td>
           <td style="color:#e5e7eb;text-align:right;">{_f(t.get('fill_price',''))}</td>
           <td style="color:#34d399;text-align:right;">{_f(t.get('tp_price',''))}</td>
           <td style="color:#f87171;text-align:right;">{_f(t.get('sl_price',''))}</td>
@@ -1115,6 +1116,7 @@ async def dashboard():
   <thead id="th-detailed" style="position:sticky;top:0;z-index:2;background:#0d1117;">
     <tr>
       <th>#</th><th>Dir</th><th>Time (IST)</th>
+      <th style="text-align:right">Signal $</th>
       <th style="text-align:right">Fill $</th><th style="text-align:right">TP $</th><th style="text-align:right">SL $</th>
       <th style="text-align:right">Exit $</th><th style="text-align:right">Pts</th><th style="text-align:right">P&L USDT</th>
       <th>Result</th><th>Exit Type</th>
