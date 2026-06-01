@@ -250,12 +250,13 @@ def on_candle_close(raw: Candle, buffer: deque):
              f"mark={feed.mark_price or 0:.1f} ref={fill_ref:.1f} "
              f"body={st.candle_body:.1f} chop={st.chop_avg_tr:.1f}")
     asyncio.run_coroutine_threadsafe(
-        _do_entry(side, fill_ref, signal_recv_time, st), LOOP)
+        _do_entry(side, fill_ref, signal_recv_time, st, bar_ts=raw.ts), LOOP)
 
 
 async def _do_entry(side, fill_ref, signal_recv_time, st=None,
                     trade_id=None, is_test=False,
-                    chop_avg_tr=0.0, burst_threshold=0.0, candle_body=0.0):
+                    chop_avg_tr=0.0, burst_threshold=0.0, candle_body=0.0,
+                    bar_ts=None):
     global open_trade, _entry_busy
     try:
         if trade_id is None:
@@ -328,6 +329,8 @@ async def _do_entry(side, fill_ref, signal_recv_time, st=None,
         fill_ist   = (datetime.now(timezone.utc) + timedelta(seconds=19800)).strftime("%d/%m %H:%M:%S IST")
         _chop      = chop_avg_tr or (st.chop_avg_tr if st else 0)
         _burst     = burst_threshold or (st.burst_threshold if st else 0)
+        # Bar close IST (signal candle)
+        _bar_close_ist = (datetime.utcfromtimestamp(bar_ts) + timedelta(seconds=19800)).strftime("%d/%m %H:%M:%S IST") if bar_ts else "?"
 
         # Server-side SL/TP — equivalent of bracket order
         tg(f"🔒 <b>SERVER-SIDE SL/TP SET</b> [{dir_label}]\n"
@@ -338,7 +341,7 @@ async def _do_entry(side, fill_ref, signal_recv_time, st=None,
         tg(f"{'🧪 TEST' if is_test else '🟢 LIVE'} <b>{dir_label} ENTERED</b> [Bybit {INTERVAL}m WS]\n"
            f"Fill: <b>{fill_avg:,.1f}</b> | Slip: <b>{slip:+.2f}pts</b>\n"
            f"SL: {sl:,.1f} [FIXED {FIXED_SL:.0f}pts] | TP: {tp:,.1f} [FIXED {FIXED_TP:.0f}pts]\n"
-           f"Fill: {fill_ist}\n"
+           f"Bar close: {_bar_close_ist} | Fill: {fill_ist}\n"
            f"Signal lat: {signal_latency_ms:.0f}ms | Entry lat: {entry_latency_ms:.0f}ms\n"
            f"Structure: <b>{_grade}</b> | Chop: {_chop:.1f} Burst: {_burst:.1f}\n"
            f"⚙️ {CONFIG_TAG}")
