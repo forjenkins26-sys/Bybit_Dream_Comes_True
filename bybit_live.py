@@ -47,6 +47,7 @@ BURST_MULT  = float(os.getenv("VS_BURST_MULT", "2.0"))
 FIXED_SL             = float(os.getenv("FIXED_SL_PTS", "50"))
 FIXED_TP             = float(os.getenv("FIXED_TP_PTS", "100"))
 MAX_PRE_ENTRY_SLIP   = float(os.getenv("MAX_PRE_ENTRY_SLIP_PTS", "0"))  # 0 = disabled
+PAPER_MODE           = os.getenv("PAPER_MODE", "false").lower() == "true"
 TP_R        = round(FIXED_TP / FIXED_SL, 2) if FIXED_SL > 0 else 2.0
 TG_TOKEN    = os.getenv("TELEGRAM_BOT_TOKEN", "")
 TG_CHAT     = os.getenv("TELEGRAM_CHAT_ID", "")
@@ -262,22 +263,33 @@ async def _do_entry(side, fill_ref, signal_recv_time, st=None,
         if trade_id is None:
             trade_id = f"T{int(time.time()*1000)}"
         entry_submit_time = time.time()
-        resp, ok, lat, sl, tp = await place_entry(side, fill_ref)
+
+        if PAPER_MODE:
+            # Paper mode — simulate fill at fill_ref, no real order
+            lat = 0.0
+            sl = round(fill_ref - FIXED_SL, 1) if side == "Buy" else round(fill_ref + FIXED_SL, 1)
+            tp = round(fill_ref + FIXED_TP, 1) if side == "Buy" else round(fill_ref - FIXED_TP, 1)
+            fill_avg = fill_ref
+            log.info(f"[PAPER] Simulated {side} @ {fill_ref:.1f} SL={sl} TP={tp}")
+        else:
+            resp, ok, lat, sl, tp = await place_entry(side, fill_ref)
+            entry_fill_time = time.time()
+
+            if not ok:
+                log.error(f"[ENTRY] FAILED: {resp}")
+                tg(f"❌ <b>ENTRY FAILED</b> [{side}]\nResp: <code>{str(resp)[:200]}</code>")
+                return
+
+            await asyncio.sleep(0.4)
+            fill_avg = fill_ref
+            try:
+                pos = await asyncio.get_event_loop().run_in_executor(None, B.get_position)
+                if pos and pos.get("avgPrice"):
+                    fill_avg = float(pos["avgPrice"])
+            except Exception as e:
+                log.warning(f"[SLIP] avg fetch fail: {e}")
+
         entry_fill_time = time.time()
-
-        if not ok:
-            log.error(f"[ENTRY] FAILED: {resp}")
-            tg(f"❌ <b>ENTRY FAILED</b> [{side}]\nResp: <code>{str(resp)[:200]}</code>")
-            return
-
-        await asyncio.sleep(0.4)
-        fill_avg = fill_ref
-        try:
-            pos = await asyncio.get_event_loop().run_in_executor(None, B.get_position)
-            if pos and pos.get("avgPrice"):
-                fill_avg = float(pos["avgPrice"])
-        except Exception as e:
-            log.warning(f"[SLIP] avg fetch fail: {e}")
 
         slip = (fill_avg - fill_ref) if side == "Buy" else (fill_ref - fill_avg)
         sl_dist = FIXED_SL
@@ -338,7 +350,8 @@ async def _do_entry(side, fill_ref, signal_recv_time, st=None,
            f"TP: {tp:,.1f} (exchange limit — server-side)\n"
            f"Exits are safe during disconnects ✓")
 
-        tg(f"{'🧪 TEST' if is_test else '🟢 LIVE'} <b>{dir_label} ENTERED</b> [Bybit {INTERVAL}m WS]\n"
+        mode_label = "📄 PAPER" if PAPER_MODE else ("🧪 TEST" if is_test else "🟢 LIVE")
+        tg(f"{mode_label} <b>{dir_label} ENTERED</b> [Bybit {INTERVAL}m WS]\n"
            f"Signal: {fill_ref:,.1f} → Fill: <b>{fill_avg:,.1f}</b> | Slip: <b>{slip:+.2f}pts</b>\n"
            f"SL: {sl:,.1f} [FIXED {FIXED_SL:.0f}pts] | TP: {tp:,.1f} [FIXED {FIXED_TP:.0f}pts]\n"
            f"Bar close: {_bar_close_ist} | Fill: {fill_ist}\n"
